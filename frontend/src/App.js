@@ -5,7 +5,7 @@ import { fetchFile } from "@ffmpeg/util";
 import "./App.css";
 
 const SR = 24000;
-const LEN = SR * 30;
+const STRIDE_PRODUCT = 320;
 
 function App() {
   const [status, setStatus] = useState("");
@@ -38,12 +38,18 @@ function App() {
       const audio = await ctx.decodeAudioData(wavData.buffer);
       const samples = audio.getChannelData(0);
 
-      const input = new Float32Array(LEN);
-      input.set(samples.subarray(0, Math.min(samples.length, LEN)));
+      const rawLen = samples.length;
+      const remainder = rawLen % STRIDE_PRODUCT;
+      const paddedLen = remainder === 0 ? rawLen : rawLen + (STRIDE_PRODUCT - remainder);
+
+      const input = new Float32Array(paddedLen);
+      input.set(samples);
 
       const session = await ort.InferenceSession.create("/encoder.onnx");
-      const tensor = new ort.Tensor("float32", input, [1, 1, LEN]);
+      const tensor = new ort.Tensor("float32", input, [1, 1, paddedLen]);
       const { codes } = await session.run({ wav: tensor });
+
+      console.log("input seconds:", rawLen / SR, "-> codes.dims:", codes.dims);
 
       const [b, nq, t] = codes.dims;
       const flat = Array.from(codes.data, Number);
